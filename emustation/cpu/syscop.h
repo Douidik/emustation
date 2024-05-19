@@ -15,19 +15,16 @@ typedef enum Cpu_Exception_Type
     CPU_EXCEPTION_OVERFLOW = 0xc,
 } Cpu_Exception_Type;
 
-typedef union Cpu_Cause {
-    struct
-    {
-        u8 _0 : 2;
-        Cpu_Exception_Type type : 4;
-        u8 _1 : 1;
-        u8 ip : 7;
-        u16 _3 : 11;
-        u8 ce : 2;
-        u8 _4 : 1;
-        u8 bd : 1;
-    };
-    u32 as_word;
+typedef struct Cpu_Cause
+{
+    u8 _0 : 2;
+    Cpu_Exception_Type type : 4;
+    u8 _1 : 1;
+    u8 ip : 7;
+    u16 _3 : 11;
+    u8 ce : 2;
+    u8 _4 : 1;
+    u8 bd : 1;
 } Cpu_Cause;
 
 typedef struct Cpu_Status
@@ -44,7 +41,7 @@ typedef struct Cpu_Status
         };
         u8 ku_stack : 6; // kernel user mode as a 6 deep bit stack
     };
-    
+
     u8 _1 : 2;
     u8 im : 8;
     u8 isc : 1;

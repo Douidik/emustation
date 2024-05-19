@@ -8,7 +8,8 @@ const Cpu_Instruction NOP = {
     .as_word = 0,
 };
 
-// Use built-in c sign extend using bitfields
+// todo! use the instruction bitfield instead
+// built-in c sign extend with struct bitfields
 #define Sign_Extend(type, name, bits) \
     type name(type x)                 \
     {                                 \
@@ -18,20 +19,18 @@ const Cpu_Instruction NOP = {
         } s;                          \
         return s.x = x;               \
     }
-
 Sign_Extend(u32, sign_extend_byte_to_word, 8);
 Sign_Extend(u32, sign_extend_hword_to_word, 16);
 Sign_Extend(u32, sign_extend_imm_address, 18);
 
 void cpu_init(Cpu *cpu, struct Bus *bus)
 {
+    report->trace("cpu init");
     memset(cpu, 0, sizeof(Cpu));
     cpu->bus = bus;
     cpu->pc = 0xbfc00000;
 
     syscop_init(&cpu->syscop);
-
-    report->trace("cpu init");
 }
 
 void cpu_hook_update_cb(Cpu *cpu, Cpu_Update_Cb update_cb, void *data)
@@ -42,7 +41,8 @@ void cpu_hook_update_cb(Cpu *cpu, Cpu_Update_Cb update_cb, void *data)
 
 Cpu_Instruction cpu_fetch_instruction(Cpu *cpu)
 {
-    if (cpu->pc & 3) { // pc not aligned to word exception
+    if (cpu->pc & 3) {
+        // cannot fetch instruction with unaligned program counter
         cpu_throw_exception(cpu, CPU_EXCEPTION_LOAD_ADDRESS);
         return NOP;
     }
@@ -64,8 +64,16 @@ void cpu_update(Cpu *cpu)
         cpu_throw_exception(cpu, CPU_EXCEPTION_ILLEGAL_INSTRUCTION);
         return;
 
-    case CPU_INSTRUCTION_COPROCESSOR:
-        cpu_execute_coprocessor_instruction(cpu, instruction.as_coprocessor);
+    case CPU_INSTRUCTION_COPROCESSOR_UNKNOWN:
+        cpu_throw_exception(cpu, CPU_EXCEPTION_COPROCESSOR);
+        return;
+
+    case CPU_INSTRUCTION_GTE:
+        cpu_execute_gte_instruction(cpu, instruction.as_gte);
+        break;
+
+    case CPU_INSTRUCTION_SYSCOP:
+        cpu_execute_syscop_instruction(cpu, instruction.as_syscop);
         break;
 
     case CPU_INSTRUCTION_REGISTER:
@@ -89,30 +97,74 @@ void cpu_update(Cpu *cpu)
 #define R cpu->regs
 #define SR cpu->sregs
 
-void cpu_execute_coprocessor_instruction(Cpu *cpu, Cpu_Instruction_Coprocessor instruction)
+void cpu_execute_syscop_instruction(Cpu *cpu, Syscop_Instruction instruction)
 {
-    if (instruction.coprocessor_id != 0 || instruction.coprocessor_id != 2) {
-        return cpu_throw_exception(cpu, CPU_EXCEPTION_COPROCESSOR);
-    }
+    Coprocessor_Move move = instruction.as_move;
 
-    u8 rd = instruction.rd;
-    u8 rt = instruction.rt;
-
-    switch (instruction.extended_opcode) {
-    case CPU_SYS_RFE:
+    switch (instruction.opcode) {
+    case SYSCOP_MFC:
+        R[move.rt] = syscop_peek(&cpu->syscop, move.rd);
+        break;
+    case SYSCOP_MTC:
+        syscop_poke(&cpu->syscop, move.rd, R[move.rt]);
+        break;
+    case SYSCOP_RFE:
         syscop_rfe(&cpu->syscop);
         break;
+    default:
+        cpu_throw_exception(cpu, CPU_EXCEPTION_ILLEGAL_INSTRUCTION);
+        break;
+    }
+}
 
-    case CPU_SYS_PEEK:
-        R[rt] = syscop_peek(&cpu->syscop, rd);
+void cpu_execute_gte_instruction(Cpu *cpu, Gte_Instruction instruction)
+{
+    Coprocessor_Move move = instruction.as_move;
+    Coprocessor_Lsw lsw = instruction.as_lsw;
+    Gte_Command command = instruction.as_command;
+
+    switch (instruction.opcode) {
+    case GTE_MFC:
+        R[move.rt] = gte_peek(&cpu->gte, move.rd);
         break;
 
-    case CPU_SYS_POKE:
-        syscop_poke(&cpu->syscop, rd, R[rt]);
-
-    case CPU_GTE_CONTROL_PEEK:
-    case CPU_GTE_CONTROL_POKE:
+    case GTE_CFC:
+        R[move.rt] = gte_peek_control(&cpu->gte, move.rd);
         break;
+
+    case GTE_MTC:
+        gte_poke(&cpu->gte, move.rd, R[move.rt]);
+        break;
+
+    case GTE_CTC:
+        gte_poke_control(&cpu->gte, move.rd, R[move.rt]);
+        break;
+
+    case GTE_COMMAND:
+
+        break;
+
+    case GTE_LWC: {
+        u32 address = R[lsw.rs] + lsw.offset;
+
+        if (!(address & 3)) {
+            u32 word = bus_peek_word(cpu->bus, address);
+            gte_poke(&cpu->gte, lsw.rt, word);
+        } else {
+            cpu_throw_exception(cpu, CPU_EXCEPTION_LOAD_ADDRESS);
+        }
+    } break;
+
+    case GTE_SWC: {
+        u32 address = R[lsw.rs] + lsw.offset;
+	
+        if (!(address & 3)) {
+            u32 word = gte_peek(&cpu->gte, lsw.rt);
+            bus_poke_word(cpu->bus, address, word);
+        } else {
+            cpu_throw_exception(cpu, CPU_EXCEPTION_LOAD_ADDRESS);
+        }
+    } break;
 
     default:
         cpu_throw_exception(cpu, CPU_EXCEPTION_ILLEGAL_INSTRUCTION);
@@ -189,7 +241,7 @@ void cpu_execute_register_instruction(Cpu *cpu, Cpu_Instruction_Register instruc
         break;
 
     case CPU_FUNCTION_ADD: // Add (signed)
-        cpu_execute_signed_add(cpu, &SR[rd], SR[rs], SR[rt]);
+        SR[rd] = cpu_execute_signed_add(cpu, SR[rd], SR[rs], SR[rt]);
         break;
 
     case CPU_FUNCTION_ADDU: // Add (unsigned)
@@ -197,7 +249,7 @@ void cpu_execute_register_instruction(Cpu *cpu, Cpu_Instruction_Register instruc
         break;
 
     case CPU_FUNCTION_SUB: // Sub (signed)
-        cpu_execute_signed_add(cpu, &SR[rd], SR[rs], -SR[rt]);
+        SR[rd] = cpu_execute_signed_add(cpu, SR[rd], SR[rs], -SR[rt]);
         break;
 
     case CPU_FUNCTION_SUBU: // Sub (unsigned)
@@ -236,7 +288,7 @@ void cpu_execute_register_instruction(Cpu *cpu, Cpu_Instruction_Register instruc
 
 void cpu_execute_immediate_instruction(Cpu *cpu, Cpu_Instruction_Immediate instruction)
 {
-    i32 sx = sign_extend_hword_to_word(instruction.sx);
+    i32 sx = instruction.sx;
     u32 x = instruction.x;
     u8 rt = instruction.rt;
     u8 rs = instruction.rs;
@@ -281,7 +333,7 @@ void cpu_execute_immediate_instruction(Cpu *cpu, Cpu_Instruction_Immediate instr
         break;
 
     case CPU_OPCODE_ADDI: // Add (signed)
-        cpu_execute_signed_add(cpu, &SR[rt], SR[rs], sx);
+        SR[rt] = cpu_execute_signed_add(cpu, SR[rt], SR[rs], sx);
         break;
 
     case CPU_OPCODE_ADDIU: // Add (unsigned)
@@ -381,14 +433,14 @@ void cpu_branch_when(Cpu *cpu, bool instruction_link, u32 imm_address, bool cond
     cpu->next_pc = branches_pc[condition];
 }
 
-void cpu_execute_signed_add(Cpu *cpu, i32 *sum, i32 a, i32 b)
+i32 cpu_execute_signed_add(Cpu *cpu, i32 r, i32 a, i32 b)
 {
-    i64 qword_sum = (i64)a + b;
-
-    if (qword_sum < SWORD_MIN || qword_sum > SWORD_MAX) {
-        return cpu_throw_exception(cpu, CPU_EXCEPTION_OVERFLOW);
+    i32 sum;
+    if (!add_overflow_s32(&sum, a, b)) {
+        cpu_throw_exception(cpu, CPU_EXCEPTION_OVERFLOW);
+        return r;
     }
-    *sum = (i32)qword_sum;
+    return sum;
 }
 
 void cpu_throw_exception(Cpu *cpu, Cpu_Exception_Type cause)

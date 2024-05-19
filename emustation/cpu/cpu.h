@@ -6,6 +6,13 @@
 #include "instruction.h"
 #include "syscop.h"
 
+// note! maybe need to enchance the r0 design
+// the r0 always needs to be equal to zero
+// some instruction may corrupt it's value
+// a solution could be to interface the poke of registers
+// through a function that doesn't record the pokes to r0
+// this would be mandatory if an instruction can poke then peek r0
+
 typedef struct Cpu Cpu;
 typedef void *(*Cpu_Update_Cb)(struct Cpu *, Cpu_Instruction, void *);
 
@@ -52,13 +59,16 @@ void cpu_init(Cpu *cpu, struct Bus *bus);
 void cpu_hook_update_cb(Cpu *cpu, Cpu_Update_Cb update_cb, void *data);
 void cpu_update(Cpu *cpu);
 
-void cpu_execute_coprocessor_instruction(Cpu *cpu, Cpu_Instruction_Coprocessor instruction);
+void cpu_execute_syscop_instruction(Cpu *cpu, Syscop_Instruction instruction);
+void cpu_execute_gte_instruction(Cpu *cpu, Gte_Instruction instruction);
+
 void cpu_execute_register_instruction(Cpu *cpu, Cpu_Instruction_Register instruction);
 void cpu_execute_immediate_instruction(Cpu *cpu, Cpu_Instruction_Immediate instruction);
 void cpu_execute_jump_instruction(Cpu *cpu, Cpu_Instruction_Jump instruction);
+
 void cpu_branch_when(Cpu *cpu, bool instruction_link, u32 imm_address, bool condition);
 void cpu_throw_exception(Cpu *cpu, Cpu_Exception_Type type);
-void cpu_execute_signed_add(Cpu *cpu, i32 *sum, i32 a, i32 b);
+i32 cpu_execute_signed_add(Cpu *cpu, i32 r, i32 x, i32 y);
 
 static const char *Cpu_Regs_Name[] = {
     "r0", "at", "v0", "v1", "a0", "a1", "a2", "a3", "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7",

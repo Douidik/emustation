@@ -11,6 +11,7 @@ add_executable(
 target_include_directories(
 	emustation-frontend PRIVATE
 	${CMAKE_SOURCE_DIR}/emustation
+	${CMAKE_SOURCE_DIR}/vendor
 )
 
 target_link_libraries(

@@ -38,10 +38,31 @@ typedef double f64;
 #define Byteswap16(x) (x)
 #endif
 
-#ifdef __GNUC__
-#define Printf_Frontend(fmt, args) __attribute__((format(printf, fmt, args)))
+// compile time check for printf arguments
+#if defined(__GNUC__) || defined(__clang__)
+#define Printf_Like(fmt, args) __attribute__((format(printf, fmt, args)))
 #else
-#define Printf_Frontend(fmt, args)
+#define Printf_Like(fmt, args)
 #endif
+
+#if defined(__GNUC__) || defined(__clang__)
+#define Fallthrough __attribute__((fallthrough))
+#else
+#define Fallthrough
+#endif
+
+// use compiler intrinsics for checked add
+inline bool add_overflow_s32(i32 *sum, i32 a, i32 b)
+{
+#if __has_builtin(__builtin_add_overflow)
+    return __builtin_sadd_overflow(a, b, sum);
+#else
+    // (a + b > INT32_MAX)  <=>  (a > b - INT32_MAX)
+    if (a > b - INT32_MAX)
+        return false;
+    *sum = a + b;
+    return true;
+#endif
+}
 
 #endif

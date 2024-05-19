@@ -4,7 +4,7 @@
 #include "common.h"
 
 typedef void (*_Reporter)(const char *s, ...);
-#define Reporter _Reporter Printf_Frontend(1, 2)
+#define Reporter _Reporter Printf_Like(1, 2)
 
 typedef struct Report
 {

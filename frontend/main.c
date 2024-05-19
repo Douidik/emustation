@@ -41,5 +41,5 @@ int main(int argc, char *argv[])
     bus_init(&bus);
 
     printf("hello emustation !\n");
-    deinit_report();
+    report_deinit();
 }

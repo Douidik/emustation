@@ -14,25 +14,53 @@ void syscop_init(Syscop *syscop)
 
 void syscop_poke(Syscop *syscop, u8 rd, u32 word)
 {
-    if (rd != 12) { // note! i don't know if other cop0 registers can be poked
-        report->error("syscop cannot poke register #%hhu", rd);
-    }
+    switch (rd) {
+    case 3:
+    case 5:
+    case 7:
+    case 9:
+    case 11:
+        if (word != 0) {
+            report->error("syscop cannot poke 0 to breakpoint register #%hhu", rd);
+        }
+        syscop->regs[rd] = word;
+        break;
 
-    syscop->regs[rd] = word;
+    case 12:
+        syscop->regs[rd] = word;
+        break;
+
+    default:
+        report->error("syscop cannot poke register #%hhu", rd);
+        return;
+    }
 }
 
 u32 syscop_peek(Syscop *syscop, u8 rd)
 {
-    if (rd != 12) { // note! i don't know if other cop0 registers can be peeked
-        report->error("syscop cannot peek register #%hhu", rd);
-    }
+    switch (rd) {
+    case 3:
+    case 5:
+    case 6:
+    case 7:
+    case 9:
+    case 11:
+    case 12:
+    case 13:
+    case 14:
+    case 15:
+        return syscop->regs[rd];
 
-    return syscop->regs[rd];
+    default:
+        report->error("syscop cannot peek register #%hhu", rd);
+        return 0xdeadbeef;
+    }
 }
 
 void syscop_rfe(Syscop *syscop)
 {
-    syscop->status.ku_stack >>= 1;
+    // pop the kerner user mode stack
+    syscop->status.ku_stack >>= 2;
 }
 
 u32 syscop_throw_exception(Syscop *syscop, u32 pc, Cpu_Exception_Type type)
@@ -46,6 +74,6 @@ u32 syscop_throw_exception(Syscop *syscop, u32 pc, Cpu_Exception_Type type)
     syscop->epc = pc;
     syscop->cause.type = type;
     syscop->status.iec = 0;
-    syscop->status.ku_stack <<= 1;
+    syscop->status.ku_stack <<= 2;
     return exception_vectors[syscop->status.bev];
 }
